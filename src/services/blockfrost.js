@@ -1,5 +1,5 @@
-const axios = require("axios");
-require("dotenv").config();
+import axios from "axios";
+import 'dotenv/config';
 
 const API_KEY = process.env.BLOCKFROST_API_KEY;
 const NETWORK = process.env.NETWORK || 'mainnet';
@@ -28,7 +28,7 @@ async function getTransactionUtxos(txHash) {
   return response.data;
 }
 
-module.exports = {
+export {
   getAddressTransactions,
   getTransactionDetails,
   getTransactionUtxos,

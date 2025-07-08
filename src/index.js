@@ -1,10 +1,13 @@
-require('dotenv').config();
-const express = require('express');
-const { pollDeposits } = require("./monitor");
-const { setupLogger } = require('./utils/logger');
+import 'dotenv/config';
+import express from 'express';
+import { pollDeposits, sendAda } from "./monitor.js";
+import { setupLogger } from './utils/logger.js';
 
 const app = express();
 const port = process.env.PORT || 3000;
+
+// Middleware to parse JSON request bodies
+app.use(express.json());
 
 // Setup logger
 const logger = setupLogger();
@@ -17,6 +20,12 @@ setInterval(() => {
 // Basic health check endpoint
 app.get('/health', (req, res) => {
   res.json({ status: 'healthy' });
+});
+
+app.post('/send-ada', (req, res) => {
+  const { receiverAddress, amount } = req.body;
+  sendAda(receiverAddress, amount);
+  res.json({ status: 'success' });
 });
 
 app.listen(port, () => {

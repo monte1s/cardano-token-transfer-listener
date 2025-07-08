@@ -1,37 +1,79 @@
-const axios = require("axios");
-require("dotenv").config();
+import axios from "axios";
+import { setupLogger } from '../utils/logger.js';
+import 'dotenv/config';
 
-const API_KEY = process.env.KOIOS_API_KEY;
-const NETWORK = process.env.NETWORK || "mainnet";
-
-const API_BASE = `https://${NETWORK}.koios.rest/api/v1`;
+const KOIOS_API_URL = "https://preprod.koios.rest/api/v1";
 
 const client = axios.create({
-  baseURL: API_BASE,
+  baseURL: KOIOS_API_URL,
 });
 
-async function getAddressTransactions(address) {
-  const response = await client.post(`/address_txs`, {
-    _addresses: [
-      "addr_test1qzts3qv4ny6n2l4sk35y4gcdch7xhzv487pks07hsxjt9mxtpu0vazwrsuc4equqxvfm28hpy6avsfxexrdgpmvxmarskxkadq",
-    ],
-    _after_block_height: 9417,
+const logger = setupLogger();
+
+async function getUtxos(address) {
+  const res = await client.post(`/address_info`, {
+    _addresses: [address],
   });
-  return response.data; // returns array of tx hashes
+  return res.data[0]?.utxo_set ?? [];
 }
 
-async function getTransactionDetails(txHash) {
-  const response = await client.get(`/txs/${txHash}`);
-  return response.data;
+async function submitTx(txHex) {
+  try {
+    const txBytes = Buffer.from(txHex, "hex");
+    console.log(txBytes, "txBytes");
+    const res = await axios.post(
+      "https://preprod.koios.rest/api/v1/submittx",
+      { _tx_bytes: txBytes },
+      {
+        headers: {
+          "Content-Type": "application/cbor",
+        },
+        responseType: "text",
+      }
+    );
+
+    return res.data;
+  } catch (error) {
+    console.log('Error submitting transaction:', error.message);
+    return null;
+  }
 }
 
-async function getTransactionUtxos(txHash) {
-  const response = await client.get(`/txs/${txHash}/utxos`);
-  return response.data;
+async function getAddressTransactions(addresses, afterBlockHeight) {
+  try {
+    const response = await client.post(`/address_txs`, {
+      _addresses: addresses,
+      _after_block_height: afterBlockHeight
+    });
+    return response.data;
+  } catch (error) {
+    logger.error('Error fetching address transactions:', error.message);
+    return [];
+  }
 }
 
-module.exports = {
+async function getTransactionInfo(tx_hashs) {
+  try {
+    const response = await client.post(`/tx_info`, {
+      _tx_hashes: tx_hashs,
+      _assets: true,
+      _inputs: false,
+      _metadata: false,
+      _withdrawals: false,
+      _certs: false,
+      _scripts: false,
+      _bytecode: false
+    });
+    return response.data;
+  } catch (error) {
+    logger.error('Error fetching address transactions:', error.message);
+    return [];
+  }
+}
+
+export {
   getAddressTransactions,
-  getTransactionDetails,
-  getTransactionUtxos,
+  getTransactionInfo,
+  getUtxos,
+  submitTx
 };
