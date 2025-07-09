@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
-import { pollDeposits, sendAda } from "./monitor.js";
+import { pollDeposits, sendAda, sendToken } from "./monitor.js";
 import { setupLogger } from './utils/logger.js';
 
 const app = express();
@@ -12,10 +12,10 @@ app.use(express.json());
 // Setup logger
 const logger = setupLogger();
 
-setInterval(() => {
-  console.log("🔍 Checking for new deposits...");
-  pollDeposits();
-}, 30 * 1000); // poll every 30 seconds
+// setInterval(() => {
+//   console.log("🔍 Checking for new deposits...");
+//   pollDeposits();
+// }, 30 * 1000); // poll every 30 seconds
 
 // Basic health check endpoint
 app.get('/health', (req, res) => {
@@ -25,6 +25,12 @@ app.get('/health', (req, res) => {
 app.post('/send-ada', (req, res) => {
   const { receiverAddress, amount } = req.body;
   sendAda(receiverAddress, amount);
+  res.json({ status: 'success' });
+});
+
+app.post('/send-token', (req, res) => {
+  const { receiverAddress, amount } = req.body;
+  sendToken(receiverAddress, amount);
   res.json({ status: 'success' });
 });
 

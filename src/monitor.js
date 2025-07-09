@@ -3,7 +3,7 @@ import Cardano from "@emurgo/cardano-serialization-lib-nodejs";
 import { setupLogger } from './utils/logger.js';
 import { getAddressTransactions, getTransactionInfo, submitTx, getUtxos } from "./services/koios.js";
 // import { Lucid } from "lucid-cardano";
-import { Lucid, Koios } from "@lucid-evolution/lucid";
+import { Lucid, Koios, toUnit } from "@lucid-evolution/lucid";
 
 const lucid = await Lucid(new Koios("https://preprod.koios.rest/api/v1"), "Preprod");
 
@@ -43,15 +43,6 @@ function deriveAddressFromPrivateKey(privateKeyBech32, networkId = 0) {
 
 const ADDRESSES = [process.env.ADDRESS];
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
-
-const testnetAddress = deriveAddressFromPrivateKey(PRIVATE_KEY, 0);
-console.log('Testnet Address:', testnetAddress.address);
-
-lucid.selectWallet.fromPrivateKey(PRIVATE_KEY);
-
-const wallet = await lucid.wallet();
-const address = await wallet.address();
-console.log(address, "address");
 
 const seenTxs = new Set();
 
@@ -138,21 +129,64 @@ async function pollDeposits() {
 
 const sendAda = async (receiverAddress, amount) => {
     try {
-        const wallet = await lucid.wallet();
-        const utxos = await wallet.getUtxos();
-        const address = await wallet.address();
-        console.log(address, "address");
-        console.log(utxos, "utxos");
 
-        const tx = await lucid
+        const testnetAddress = deriveAddressFromPrivateKey(process.env.PRIVATE_KEY_2, 0);
+        const utxos = await lucid.utxosAt(testnetAddress.address);
+        lucid.selectWallet.fromAddress(testnetAddress.address, utxos);
+
+        const txBuilder = await lucid
             .newTx()
             .pay.ToAddress(receiverAddress, { lovelace: BigInt(amount) })
             .complete();
-        const signedTx = await tx.sign().withWallet().complete();
+        const signedTx = await txBuilder.sign.withPrivateKey(process.env.PRIVATE_KEY_2).complete();
         const txHash = await signedTx.submit();
         console.log("Transaction Submitted:", txHash);
 
         return txHash;
+    } catch (error) {
+        console.log(error)
+    }
+}
+
+const sendToken = async (receiverAddress, amount) => {
+    try {
+        // Native asset information
+        const policyId = "5ad583d0aabeb7e2e3f57376cd25b444b0bb62737b52b2e0ff65e7ed";
+        const assetName = "434841524c4553";
+        const unit = toUnit(policyId, assetName);
+
+        const senderAddress = deriveAddressFromPrivateKey(process.env.PRIVATE_KEY_2, 0);
+        const feePayerAddress = deriveAddressFromPrivateKey(process.env.FEEPAYER_PRIVATE_KEY, 0);
+
+        // ---- FETCH UTXOs ----
+        const senderUtxos = await lucid.utxosAt(senderAddress.address);
+        const feePayerUtxos = await lucid.utxosAt(feePayerAddress.address);
+
+        // Pick UTxOs (you can use your own selection logic)
+        const senderUtxo = senderUtxos.find(utxo =>
+            utxo.assets[unit] && utxo.assets[unit] >= amount
+        );
+        if (!senderUtxo) throw new Error("Sender does not have enough tokens.");
+
+        const feeUtxo = feePayerUtxos.find(utxo => utxo.assets["lovelace"] >= 2_000_000n);
+        if (!feeUtxo) throw new Error("Fee payer does not have enough ADA.");
+
+        // ---- BUILD TX ----
+        lucid.selectWallet.fromAddress(feePayerAddress.address, feePayerUtxos);
+
+        const tx = await lucid.newTx()
+            .collectFrom([senderUtxo, feeUtxo])
+            .pay.ToAddress(receiverAddress, { [unit]: amount })
+            .complete();
+
+        // ---- SIGN & SUBMIT ----
+        const signedTx = await tx
+            .sign.withPrivateKey(process.env.PRIVATE_KEY_2)
+            .sign.withPrivateKey(process.env.FEEPAYER_PRIVATE_KEY)
+            .complete();
+
+        const txHash = await signedTx.submit();
+        console.log("Transaction submitted with hash:", txHash);
     } catch (error) {
         console.log(error)
     }
@@ -244,4 +278,4 @@ const sendAdaOld = async (receiverAddress, amount) => {
     }
 }
 
-export { pollDeposits, sendAda };
+export { pollDeposits, sendAda, sendToken };
